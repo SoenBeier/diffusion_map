@@ -12,11 +12,17 @@ from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.preprocessing import normalize
 import scipy.sparse.linalg as spsl
 
+import time
 
 
 def save_matrix(M,name = "test", folder_name = "diffusion_map"):
+    time1 = time.time()
+    
     df = pd.DataFrame(M,copy=True)
     df.to_csv(folder_name + "/" + name + ".csv")    
+    
+    time2 = time.time()
+    print("saved matrix in ", time2-time1, " seconds.")
     
 
 def create_helix(radius, height,num_wobels, num_points):
@@ -50,16 +56,21 @@ def standardize_matrix(matrix):
     return matrix    
     
 def calculate_distance_matrix(X, methode = "sklearn"):
+    time1 = time.time()
+    
     X = copy.deepcopy(X)
     
     if methode == "sklearn":
         D = pairwise_distances(X, metric='euclidean')
+        
+    time2 = time.time()
+    print("calculated distances in ", time2-time1, " seconds.")
     
     return D
 
 def guess_epsilon_Cameron(D):
     ''' see "Diffusion Map" lecture notes from Maria Cameron '''
-    D = copy.deepcopy(D)
+    #D = copy.deepcopy(D)
     
     squared_D = np.square(D)
     
@@ -74,9 +85,10 @@ def guess_epsilon_Cameron(D):
     return epsilon    
     
 def calculate_kernel_matrix(D, epsilon, kernel = "gaussian"):
-    D = copy.deepcopy(D)
+    time1 = time.time()
+    
+    #D = copy.deepcopy(D)
     squared_D = np.square(D)
-    save_matrix(squared_D,name = "sD", folder_name = "diffusion_map")
     K = np.zeros((D.shape[0],D.shape[0]))
     
     for i in tqdm(range(D.shape[0]), desc = "Compute..."):
@@ -85,41 +97,50 @@ def calculate_kernel_matrix(D, epsilon, kernel = "gaussian"):
                 val = exp(-squared_D[i,j]/epsilon)
             K[i,j] = val
             K[j,i] = val
+            
+    time2 = time.time()
+    print("calculated kernel matrix in ", time2-time1, " seconds.")
     
     return K
     
     
 def only_take_nearest_neighbours(K,number_neighbours = 10):
-    K = copy.deepcopy(K)
+    time1 = time.time()
+    #K = copy.deepcopy(K)
     
     #delete entries which are below a treshold
     for i in tqdm (range(K.shape[0]), desc= "Compute..." ):
         considered_row = copy.deepcopy(K[i,:])
         considered_row.sort()
-        treshold = considered_row[-number_neighbours]
+        threshold = considered_row[-number_neighbours]
         for j in range(K.shape[1]):
-            if K[i,j] < treshold:
-                K[i,j] = 0
+            if K[i,j] < threshold:
+                K[i,j] = int(0)
                 
     #keep a symetric matrix
     for i in tqdm (range(K.shape[0]), desc= "Compute..." ):
         for j in range(K.shape[1]):
             if K[i,j] != 0:
                 K[j,i] = K[i,j]
-                
+    
+    time2 = time.time()
+    print("only keep nearest neighbours in ", time2-time1, "seconds.")
+    
     return K           
                 
 def normalizing_rows(K):
     #P = normalize(K, axis=1, norm='l1')
     
-    K = copy.deepcopy(K)
+    #K = copy.deepcopy(K)
     
     P = np.zeros((K.shape[0],K.shape[1]))
     
     for rows in tqdm (range(K.shape[0]), desc= "Compute..." ):
         s = sum(K[rows,:])
         for columns in range(K.shape[1]):
-            P[rows,columns] = K[rows,columns]/s
+            if K[rows,columns] != 0:
+                P[rows,columns] = K[rows,columns]/s
+                
 
     print("Sums of first rows after normalization: ")
     for rows in range(20):
@@ -128,10 +149,13 @@ def normalizing_rows(K):
     return P
     
     
-def calculate_diffusion_map(P):
-    P = copy.deepcopy(P)
+def calculate_diffusion_map(P,num_eigenv=6):
+    time1 = time.time()
+    #P = copy.deepcopy(P)
     
-    eigenvalues, eigenvectors = np.linalg.eig(P)
+    #eigenvalues, eigenvectors = np.linalg.eig(P)
+    eigenvalues, eigenvectors = spsl.eigs(P, k=num_eigenv, which='LR')
+    print("calculated eigenvalues & eigenvectors")
     
     #sort eigenvalues and eigenvectors,delete first eigenvector
     ix = eigenvalues.argsort()[::-1][1:]
@@ -141,27 +165,30 @@ def calculate_diffusion_map(P):
     #compute diffusion map
     diffusion_map = eigenvalues * eigenvectors
     
+    time2 = time.time()
+    print("calculated diffusion map in ", time2-time1, " seconds.")
+    
     return diffusion_map, eigenvalues, eigenvectors
 
     
-def plot_eigenvalues(eigenvalues):
-    plt.plot(list(range(len(eigenvalues)))[0:10:1],list(eigenvalues)[0:10:1],'*')
+def plot_eigenvalues(eigenvalues,num_eigenv=6):
+    plt.plot(list(range(len(eigenvalues)))[0:num_eigenv:1],list(eigenvalues)[0:num_eigenv:1],'*')
     plt.xlabel('index eigenvalue')
     plt.ylabel('eigenvalue')
     plt.show()
     
     
-def plot_diffusion_map(diffusion_map, dimensions = 2,color = 'Black'):
+def plot_diffusion_map(diffusion_map, dimensions = 2,color = 'Black',marker = "."):
     fig = plt.figure()
     
     if dimensions == 3:
         ax = fig.add_subplot(projection='3d')
         ax.set_zlabel('Diffusion Component 3')
-        ax.scatter(diffusion_map[:, 0], diffusion_map[:, 1],diffusion_map[:, 2],marker = "*",c=color)
+        ax.scatter(diffusion_map[:, 0], diffusion_map[:, 1],diffusion_map[:, 2],marker = marker,c=color)
 
     if dimensions == 2:
         ax = fig.add_subplot()
-        ax.scatter(diffusion_map[:, 0], diffusion_map[:, 1],marker = "*",c=color)
+        ax.scatter(diffusion_map[:, 0], diffusion_map[:, 1],marker = marker,c=color)
         
     ax.set_xlabel('Diffusion Component 1')
     ax.set_ylabel('Diffusion Component 2')
@@ -170,3 +197,4 @@ def plot_diffusion_map(diffusion_map, dimensions = 2,color = 'Black'):
     
 def plot_matrix(matrix):
     None
+    
