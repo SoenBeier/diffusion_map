@@ -87,16 +87,9 @@ def guess_epsilon_Cameron(D):
 def calculate_kernel_matrix(D, epsilon, kernel = "gaussian"):
     time1 = time.time()
     
-    #D = copy.deepcopy(D)
     squared_D = np.square(D)
-    K = np.zeros((D.shape[0],D.shape[0]))
-    
-    for i in tqdm(range(D.shape[0]), desc = "Compute..."):
-        for j in range(i+1):
-            if kernel == "gaussian":
-                val = exp(-squared_D[i,j]/epsilon)
-            K[i,j] = val
-            K[j,i] = val
+
+    K = np.exp(-squared_D/epsilon)
             
     time2 = time.time()
     print("calculated kernel matrix in ", time2-time1, " seconds.")
@@ -113,15 +106,12 @@ def only_take_nearest_neighbours(K,number_neighbours = 10):
         considered_row = copy.deepcopy(K[i,:])
         considered_row.sort()
         threshold = considered_row[-number_neighbours]
-        for j in range(K.shape[1]):
-            if K[i,j] < threshold:
-                K[i,j] = int(0)
+
+        K[i,:][K[i,:]<threshold] = 0
+
                 
-    #keep a symetric matrix
-    for i in tqdm (range(K.shape[0]), desc= "Compute..." ):
-        for j in range(K.shape[1]):
-            if K[i,j] != 0:
-                K[j,i] = K[i,j]
+    #keep a symetric matrix              
+    K = np.maximum(K, K.transpose())
     
     time2 = time.time()
     print("only keep nearest neighbours in ", time2-time1, "seconds.")
@@ -129,19 +119,16 @@ def only_take_nearest_neighbours(K,number_neighbours = 10):
     return K           
                 
 def normalizing_rows(K):
-    #P = normalize(K, axis=1, norm='l1')
+    time1 = time.time()
     
-    #K = copy.deepcopy(K)
-    
-    P = np.zeros((K.shape[0],K.shape[1]))
-    
-    for rows in tqdm (range(K.shape[0]), desc= "Compute..." ):
-        s = sum(K[rows,:])
-        for columns in range(K.shape[1]):
-            if K[rows,columns] != 0:
-                P[rows,columns] = K[rows,columns]/s
-                
+    r = np.sum(K, axis=0) # Sum of every row of K
+    Di = np.diag(1/r) # Degree matrix
+    P = np.matmul(Di, K)
 
+    time2 = time.time()
+    print("normalization in ", time2-time1, "seconds.")
+    
+    
     print("Sums of first rows after normalization: ")
     for rows in range(20):
         print(sum(P[rows,:]), end=","),
@@ -151,9 +138,7 @@ def normalizing_rows(K):
     
 def calculate_diffusion_map(P,num_eigenv=6):
     time1 = time.time()
-    #P = copy.deepcopy(P)
-    
-    #eigenvalues, eigenvectors = np.linalg.eig(P)
+
     eigenvalues, eigenvectors = spsl.eigs(P, k=num_eigenv, which='LR')
     print("calculated eigenvalues & eigenvectors")
     
@@ -198,3 +183,28 @@ def plot_diffusion_map(diffusion_map, dimensions = 2,color = 'Black',marker = ".
 def plot_matrix(matrix):
     None
     
+
+def is_matrix_symetric(M):
+    n_zeros = 0
+    n_not_zeros = 0
+    n_entries_not_same = 0
+    differences = [0]
+    
+    for i in tqdm(range(M.shape[0]), desc = "Compute..."):
+        for j in range(i):
+            if M[i,j] != 0:
+                n_not_zeros = n_not_zeros + 1
+            
+            if M[i,j] != M[j,i]:
+                n_entries_not_same = n_entries_not_same + 1
+                differences.append(abs(M[i,j]-M[j,i]))
+    
+    print("n_zeros: ", M.shape[0]*M.shape[1] - n_not_zeros)
+    print("n_not_zeros: ", n_not_zeros)
+    print("n_entries_not_same: ", n_entries_not_same)
+    print("max(differences): ", max(differences))
+    
+    if n_entries_not_same == 0:
+        return True
+    else:
+        return False
